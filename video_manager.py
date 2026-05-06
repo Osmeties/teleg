@@ -7,28 +7,9 @@ DATA_FILE = "videos.json"
 
 
 class VideoManager:
-    """
-    Menyimpan dan mengelola daftar video dalam file JSON.
-    Cocok untuk Railway/Render (tanpa database eksternal).
-    
-    Struktur data tiap video:
-    {
-        "id": 1,
-        "title": "Judul Video",
-        "file_id": "BAADAgAD...",   # Telegram file_id (prioritas utama)
-        "url": "https://...",        # URL mp4 (alternatif jika tidak ada file_id)
-        "uploaded_at": "06/05 14:00",
-        "broadcasted": false          # sudah pernah di-broadcast ke channel?
-    }
-    """
-
     def __init__(self):
         self.data_file = DATA_FILE
         self._ensure_file()
-
-    # ─────────────────────────────────────────────
-    #  Internal helpers
-    # ─────────────────────────────────────────────
 
     def _ensure_file(self):
         if not os.path.exists(self.data_file):
@@ -42,50 +23,41 @@ class VideoManager:
         with open(self.data_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-    # ─────────────────────────────────────────────
-    #  CRUD
-    # ─────────────────────────────────────────────
-
-    def add_video(
-        self,
-        title: str,
-        file_id: Optional[str] = None,
-        url: Optional[str] = None
-    ) -> dict:
-        """Tambah video baru. Harus ada file_id ATAU url."""
+    def add_video(self, title: str, file_id: Optional[str] = None, url: Optional[str] = None) -> dict:
         if not file_id and not url:
             raise ValueError("Harus menyertakan file_id atau url.")
-
         data = self._load()
         video = {
-            "id":          data["next_id"],
-            "title":       title,
-            "file_id":     file_id,
-            "url":         url,
-            "uploaded_at": datetime.now().strftime("%d/%m/%Y %H:%M"),
-            "broadcasted": False
+            "id":           data["next_id"],
+            "title":        title,
+            "file_id":      file_id,
+            "url":          url,
+            "thumbnail_id": None,
+            "uploaded_at":  datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "broadcasted":  False
         }
         data["videos"].append(video)
         data["next_id"] += 1
         self._save(data)
         return video
 
+    def set_thumbnail(self, video_id: int, thumbnail_id: str) -> bool:
+        data = self._load()
+        for v in data["videos"]:
+            if v["id"] == video_id:
+                v["thumbnail_id"] = thumbnail_id
+                self._save(data)
+                return True
+        return False
+
     def get_latest_video(self) -> Optional[dict]:
-        """Ambil video paling baru (ID tertinggi)."""
         videos = self.get_all_videos()
         return videos[-1] if videos else None
 
     def get_next_scheduled_video(self) -> Optional[dict]:
-        """
-        Ambil video berikutnya yang belum di-broadcast.
-        Kalau semua sudah di-broadcast, ambil yang paling baru.
-        """
         videos = self.get_all_videos()
         not_yet = [v for v in videos if not v.get("broadcasted")]
-        if not_yet:
-            return not_yet[0]
-        # fallback: video terbaru
-        return videos[-1] if videos else None
+        return not_yet[0] if not_yet else (videos[-1] if videos else None)
 
     def get_video_by_id(self, video_id: int) -> Optional[dict]:
         data = self._load()
