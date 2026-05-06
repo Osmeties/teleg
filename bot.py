@@ -13,10 +13,10 @@ from video_manager import VideoManager
 # ─────────────────────────────────────────────
 # KONFIGURASI — isi di file .env atau Railway Variables
 # ─────────────────────────────────────────────
-BOT_TOKEN        = os.getenv("BOT_TOKEN", "ISI_BOT_TOKEN_DI_SINI")
-CHANNEL_ID       = os.getenv("CHANNEL_ID", "@nama_channel_kamu")   # e.g. @mychannel
-CHANNEL_LINK     = os.getenv("CHANNEL_LINK", "https://t.me/nama_channel_kamu")
-BOT_USERNAME     = os.getenv("BOT_USERNAME", "nama_bot_kamu")       # tanpa @
+BOT_TOKEN        = os.getenv("BOT_TOKEN", "8652023085:AAH2b5Xca52J3-vQSXpgxuVSu0zSIkcUzak")
+CHANNEL_ID       = os.getenv("CHANNEL_ID", "@mediaWJR")   # e.g. @mychannel
+CHANNEL_LINK     = os.getenv("CHANNEL_LINK", "https://t.me/mediaWJR")
+BOT_USERNAME     = os.getenv("BOT_USERNAME", "MediaWJR_bot")       # tanpa @
 ADMIN_ID         = int(os.getenv("ADMIN_ID", "0"))                  # Telegram user ID admin
 
 logging.basicConfig(
