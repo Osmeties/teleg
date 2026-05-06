@@ -2,6 +2,9 @@ import os
 import logging
 import asyncio
 from datetime import datetime
+import pytz
+
+WIB = pytz.timezone('Asia/Jakarta')
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -110,7 +113,7 @@ async def add_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.message.reply_to_message and update.message.reply_to_message.video:
         file_id = update.message.reply_to_message.video.file_id
-        title   = args if args else f"Video {datetime.now().strftime('%d/%m %H:%M')}"
+        title   = args if args else f"Video {datetime.now(WIB).strftime('%d/%m %H:%M')}"
         video   = video_manager.add_video(title=title, file_id=file_id)
         await update.message.reply_text(
             f"✅ Video '<b>{title}</b>' berhasil ditambahkan!\n"
@@ -312,7 +315,7 @@ async def scheduled_broadcast(app: Application):
     caption = (
         f"🎬 <b>Video Terbaru Tersedia!</b>\n\n"
         f"📌 <b>{video['title']}</b>\n"
-        f"🕐 {datetime.now().strftime('%d/%m/%Y %H:%M')} WIB\n\n"
+        f"🕐 {datetime.now(WIB).strftime('%d/%m/%Y %H:%M')} WIB\n\n"
         f"▶️ Klik tombol di bawah untuk tonton langsung!"
     )
     keyboard     = [[InlineKeyboardButton("▶️ Tonton Sekarang", url=bot_link)]]

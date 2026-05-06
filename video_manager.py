@@ -1,6 +1,9 @@
 import json
 import os
 from datetime import datetime
+import pytz
+
+WIB = pytz.timezone('Asia/Jakarta')
 from typing import Optional
 
 DATA_FILE = "videos.json"
@@ -33,7 +36,7 @@ class VideoManager:
             "file_id":      file_id,
             "url":          url,
             "thumbnail_id": None,
-            "uploaded_at":  datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "uploaded_at":  datetime.now(WIB).strftime("%d/%m/%Y %H:%M"),
             "broadcasted":  False
         }
         data["videos"].append(video)
