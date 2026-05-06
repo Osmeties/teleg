@@ -143,8 +143,9 @@ async def add_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def set_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Admin: set thumbnail untuk video.
-    Cara: reply ke foto dengan /thumb <id_video>
+    Admin: set thumbnail.
+    Cara 1: Kirim foto dengan caption /thumb <id>
+    Cara 2: Reply ke foto dengan /thumb <id>
     """
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Kamu bukan admin!")
@@ -153,31 +154,34 @@ async def set_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
             "📖 <b>Cara set thumbnail:</b>\n\n"
-            "1. Kirim foto ke bot\n"
-            "2. Reply foto itu dengan:\n"
+            "<b>Cara termudah:</b>\n"
+            "Kirim foto ke bot dengan caption:\n"
             "<code>/thumb ID_VIDEO</code>\n\n"
-            "Contoh: <code>/thumb 3</code>\n\n"
+            "Contoh caption: <code>/thumb 1</code>\n\n"
             "Cek ID video dengan /listall",
             parse_mode="HTML"
         )
         return
 
-    if not update.message.reply_to_message or not update.message.reply_to_message.photo:
+    video_id = int(context.args[0])
+
+    # Cek apakah pesan ini sendiri berisi foto
+    photo = None
+    if update.message.photo:
+        photo = update.message.photo[-1]
+    elif update.message.reply_to_message and update.message.reply_to_message.photo:
+        photo = update.message.reply_to_message.photo[-1]
+
+    if not photo:
         await update.message.reply_text(
-            "⚠️ Kamu harus <b>reply ke foto</b> dengan perintah ini!\n\n"
-            "Langkah:\n"
-            "1. Kirim foto thumbnail ke bot\n"
-            "2. Reply foto itu dengan <code>/thumb ID_VIDEO</code>",
+            "⚠️ Tidak ada foto ditemukan!\n\n"
+            "Kirim foto dengan caption <code>/thumb " + str(video_id) + "</code>",
             parse_mode="HTML"
         )
         return
 
-    video_id = int(context.args[0])
-    # Ambil foto resolusi tertinggi
-    photo    = update.message.reply_to_message.photo[-1]
     thumb_id = photo.file_id
-
-    success = video_manager.set_thumbnail(video_id, thumb_id)
+    success  = video_manager.set_thumbnail(video_id, thumb_id)
     if success:
         video = video_manager.get_video_by_id(video_id)
         await update.message.reply_text(
@@ -187,6 +191,18 @@ async def set_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text(f"❌ Video ID {video_id} tidak ditemukan. Cek /listall")
+
+
+async def handle_photo_with_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle foto yang dikirim dengan caption /thumb <id>"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    caption = update.message.caption or ""
+    if caption.startswith("/thumb"):
+        parts = caption.split()
+        if len(parts) >= 2:
+            context.args = [parts[1]]
+            await set_thumbnail(update, context)
 
 
 async def broadcast_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -355,6 +371,7 @@ def main():
     app.add_handler(CommandHandler("info",      info))
     app.add_handler(CommandHandler("add",       add_video))
     app.add_handler(CommandHandler("thumb",     set_thumbnail))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo_with_caption))
     app.add_handler(CommandHandler("broadcast", broadcast_now))
     app.add_handler(CommandHandler("listall",   list_admin))
     app.add_handler(CommandHandler("delete",    delete_video_cmd))
