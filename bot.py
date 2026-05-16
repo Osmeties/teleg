@@ -17,7 +17,9 @@ BOT_TOKEN    = os.getenv("BOT_TOKEN", "ISI_BOT_TOKEN_DI_SINI")
 CHANNEL_ID   = os.getenv("CHANNEL_ID", "@nama_channel_kamu")
 CHANNEL_LINK = os.getenv("CHANNEL_LINK", "https://t.me/nama_channel_kamu")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "nama_bot_kamu")
-ADMIN_ID     = int(os.getenv("ADMIN_ID", "0"))
+ADMIN_ID             = int(os.getenv("ADMIN_ID", "0"))
+VIDEOS_PER_BROADCAST  = int(os.getenv("VIDEOS_PER_BROADCAST", "3"))   # default 3 video per broadcast
+BROADCAST_INTERVAL_HR = int(os.getenv("BROADCAST_INTERVAL_HR", "3"))   # default setiap 3 jam
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -94,7 +96,8 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"ℹ️ <b>Info Video Bot</b>\n\n"
         f"📦 Total video: <b>{total}</b>\n"
         f"🕐 Video terakhir: <b>{last_time}</b>\n"
-        f"⏰ Update otomatis: <b>setiap 1 jam</b>\n\n"
+        f"⏰ Update otomatis: <b>setiap {BROADCAST_INTERVAL_HR} jam</b>\n"
+        f"🎬 Video per broadcast: <b>{VIDEOS_PER_BROADCAST} video</b>\n\n"
         f"📢 Channel kami: {CHANNEL_LINK}"
     )
     await update.message.reply_text(text, parse_mode="HTML")
@@ -125,21 +128,34 @@ async def add_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif "|" in args:
         parts = args.split("|", 1)
         title = parts[0].strip()
-        url   = parts[1].strip()
-        video = video_manager.add_video(title=title, url=url)
-        await update.message.reply_text(
-            f"✅ Video '<b>{title}</b>' berhasil ditambahkan!\n"
-            f"ID: <b>{video['id']}</b>\n\n"
-            f"💡 Tambahkan thumbnail:\n<code>/thumb {video['id']}</code> (reply ke foto)",
-            parse_mode="HTML"
-        )
+        value = parts[1].strip()
+
+        # Cek apakah value adalah file_id (panjang >20 dan tidak diawali http)
+        if not value.startswith("http") and len(value) > 20:
+            video = video_manager.add_video(title=title, file_id=value)
+            await update.message.reply_text(
+                f"✅ Video '<b>{title}</b>' berhasil diimport via File ID!\n"
+                f"ID: <b>{video['id']}</b>\n\n"
+                f"💡 Tambahkan thumbnail:\n<code>/thumb {video['id']}</code>",
+                parse_mode="HTML"
+            )
+        else:
+            video = video_manager.add_video(title=title, url=value)
+            await update.message.reply_text(
+                f"✅ Video '<b>{title}</b>' berhasil ditambahkan via URL!\n"
+                f"ID: <b>{video['id']}</b>\n\n"
+                f"💡 Tambahkan thumbnail:\n<code>/thumb {video['id']}</code>",
+                parse_mode="HTML"
+            )
     else:
         await update.message.reply_text(
             "📖 <b>Cara tambah video:</b>\n\n"
             "<b>Metode 1 — Reply ke video:</b>\n"
             "<code>/add Judul Video Kamu</code>\n\n"
             "<b>Metode 2 — Via URL:</b>\n"
-            "<code>/add Judul Video | https://url-video.mp4</code>",
+            "<code>/add Judul Video | https://url-video.mp4</code>\n\n"
+            "<b>Metode 3 — Via File ID (import):</b>\n"
+            "<code>/add Judul Video | FILE_ID_DISINI</code>",
             parse_mode="HTML"
         )
 
@@ -305,41 +321,79 @@ async def deliver_video(chat_id: int, video: dict, context: ContextTypes.DEFAULT
 # ══════════════════════════════════════════════
 
 async def scheduled_broadcast(app: Application):
-    video = video_manager.get_next_scheduled_video()
-    if not video:
+    """Broadcast beberapa video sekaligus sebagai media group (album)."""
+    from telegram import InputMediaPhoto
+
+    videos = video_manager.get_next_scheduled_videos(VIDEOS_PER_BROADCAST)
+    if not videos:
         logger.warning("Tidak ada video untuk di-broadcast.")
         return
 
-    bot_link = f"https://t.me/{BOT_USERNAME}?start=video_{video['id']}"
-
-    caption = (
-        f"🎬 <b>Video Terbaru Tersedia!</b>\n\n"
-        f"📌 <b>{video['title']}</b>\n"
-        f"🕐 {datetime.now(WIB).strftime('%d/%m/%Y %H:%M')} WIB\n\n"
-        f"▶️ Klik tombol di bawah untuk tonton langsung!"
-    )
-    keyboard     = [[InlineKeyboardButton("▶️ Tonton Sekarang", url=bot_link)]]
+    now_str      = datetime.now(WIB).strftime("%d/%m/%Y %H:%M")
+    keyboard     = [[InlineKeyboardButton("▶️ Tonton Sekarang", url=f"https://t.me/{BOT_USERNAME}?start=latest")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
+    # Pisah video yang punya thumbnail dan yang tidak
+    with_thumb    = [v for v in videos if v.get("thumbnail_id")]
+    without_thumb = [v for v in videos if not v.get("thumbnail_id")]
+
     try:
-        # Kalau ada thumbnail, kirim sebagai foto dengan tombol
-        if video.get("thumbnail_id"):
-            await app.bot.send_photo(
+        if with_thumb:
+            # Buat media group dari thumbnail
+            media_group = []
+            for i, v in enumerate(with_thumb):
+                bot_link = f"https://t.me/{BOT_USERNAME}?start=video_{v['id']}"
+                cap = f"🎬 <b>{v['title']}</b>\n▶️ <a href=\"{bot_link}\">Tonton Sekarang</a>"
+                media_group.append(
+                    InputMediaPhoto(
+                        media=v["thumbnail_id"],
+                        caption=cap if i == 0 else f"🎬 <b>{v['title']}</b>\n▶️ <a href=\"{bot_link}\">Tonton</a>",
+                        parse_mode="HTML"
+                    )
+                )
+
+            # Kirim album thumbnail
+            await app.bot.send_media_group(
                 chat_id=CHANNEL_ID,
-                photo=video["thumbnail_id"],
-                caption=caption,
-                parse_mode="HTML",
-                reply_markup=reply_markup
+                media=media_group
             )
-        else:
+
+            # Kirim 1 pesan teks dengan tombol setelah album
+            judul_list = "\n".join([f"• {v['title']}" for v in with_thumb])
+            caption = (
+                f"🎬 <b>Video Terbaru Tersedia!</b>\n\n"
+                f"{judul_list}\n\n"
+                f"🕐 {now_str} WIB\n"
+                f"▶️ Klik tombol untuk tonton langsung!"
+            )
             await app.bot.send_message(
                 chat_id=CHANNEL_ID,
                 text=caption,
                 parse_mode="HTML",
                 reply_markup=reply_markup
             )
-        logger.info(f"✅ Broadcast berhasil: {video['title']}")
-        video_manager.mark_as_broadcasted(video['id'])
+
+        # Video tanpa thumbnail — kirim teks biasa
+        if without_thumb:
+            judul_list = "\n".join([f"• {v['title']}" for v in without_thumb])
+            caption = (
+                f"🎬 <b>Video Terbaru Tersedia!</b>\n\n"
+                f"{judul_list}\n\n"
+                f"🕐 {now_str} WIB\n"
+                f"▶️ Klik tombol untuk tonton langsung!"
+            )
+            await app.bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=caption,
+                parse_mode="HTML",
+                reply_markup=reply_markup
+            )
+
+        # Tandai semua sebagai sudah dibroadcast
+        for v in videos:
+            video_manager.mark_as_broadcasted(v["id"])
+            logger.info(f"✅ Broadcast berhasil: {v['title']}")
+
     except Exception as e:
         logger.error(f"❌ Gagal broadcast: {e}")
 
@@ -347,6 +401,66 @@ async def scheduled_broadcast(app: Application):
 # ══════════════════════════════════════════════
 #  DEEP LINK
 # ══════════════════════════════════════════════
+
+async def set_videos_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin: atur jumlah video per broadcast. Usage: /setvideo <1-10>"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text(
+            f"⚙️ <b>Pengaturan Broadcast</b>\n\n"
+            f"🎬 Video per broadcast : <b>{VIDEOS_PER_BROADCAST} video</b>\n"
+            f"⏰ Interval broadcast  : <b>setiap {BROADCAST_INTERVAL_HR} jam</b>\n\n"
+            f"<b>Ubah jumlah video:</b>\n"
+            f"<code>/setvideo 5</code> → 5 video per broadcast\n\n"
+            f"<b>Ubah interval jam:</b>\n"
+            f"<code>/setjam 2</code> → broadcast setiap 2 jam",
+            parse_mode="HTML"
+        )
+        return
+    count = int(context.args[0])
+    count = max(1, min(count, 10))
+    global VIDEOS_PER_BROADCAST
+    VIDEOS_PER_BROADCAST = count
+    await update.message.reply_text(
+        f"✅ Sekarang bot akan broadcast <b>{count} video</b> setiap <b>{BROADCAST_INTERVAL_HR} jam</b>!",
+        parse_mode="HTML"
+    )
+
+
+async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin: atur interval jam broadcast. Usage: /setjam <1-24>"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text(
+            f"⚙️ Interval saat ini: <b>setiap {BROADCAST_INTERVAL_HR} jam</b>\n\n"
+            f"Ubah dengan: <code>/setjam 3</code>\n"
+            f"Range: 1-24 jam",
+            parse_mode="HTML"
+        )
+        return
+    hours = int(context.args[0])
+    hours = max(1, min(hours, 24))
+    global BROADCAST_INTERVAL_HR
+    BROADCAST_INTERVAL_HR = hours
+
+    # Update scheduler
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    scheduler = context.application.job_queue
+    # reschedule via APScheduler directly stored in app
+    try:
+        app = context.application
+        app._scheduler.reschedule_job("hourly_broadcast", trigger="interval", hours=hours)
+    except Exception as e:
+        logger.warning(f"Reschedule warning: {e}")
+
+    await update.message.reply_text(
+        f"✅ Interval broadcast diubah ke <b>setiap {hours} jam</b>!\n"
+        f"🎬 Video per broadcast: <b>{VIDEOS_PER_BROADCAST} video</b>",
+        parse_mode="HTML"
+    )
+
 
 async def deep_link_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args and context.args[0].startswith("video_"):
@@ -378,12 +492,14 @@ def main():
     app.add_handler(CommandHandler("broadcast", broadcast_now))
     app.add_handler(CommandHandler("listall",   list_admin))
     app.add_handler(CommandHandler("delete",    delete_video_cmd))
+    app.add_handler(CommandHandler("setvideo",  set_videos_count))
+    app.add_handler(CommandHandler("setjam",    set_interval))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(scheduled_broadcast, trigger="interval", hours=1, args=[app], id="hourly_broadcast")
+    scheduler.add_job(scheduled_broadcast, trigger="interval", hours=BROADCAST_INTERVAL_HR, args=[app], id="hourly_broadcast")
     scheduler.start()
-    logger.info("⏰ Scheduler aktif — broadcast setiap 1 jam")
+    logger.info(f"⏰ Scheduler aktif — broadcast setiap {BROADCAST_INTERVAL_HR} jam, {VIDEOS_PER_BROADCAST} video per broadcast")
 
     logger.info("🤖 Bot berjalan...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
