@@ -404,6 +404,7 @@ async def scheduled_broadcast(app: Application):
 
 async def set_videos_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin: atur jumlah video per broadcast. Usage: /setvideo <1-10>"""
+    global VIDEOS_PER_BROADCAST, BROADCAST_INTERVAL_HR
     if update.effective_user.id != ADMIN_ID:
         return
     if not context.args or not context.args[0].isdigit():
@@ -420,7 +421,6 @@ async def set_videos_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     count = int(context.args[0])
     count = max(1, min(count, 10))
-    global VIDEOS_PER_BROADCAST
     VIDEOS_PER_BROADCAST = count
     await update.message.reply_text(
         f"✅ Sekarang bot akan broadcast <b>{count} video</b> setiap <b>{BROADCAST_INTERVAL_HR} jam</b>!",
@@ -430,6 +430,7 @@ async def set_videos_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin: atur interval jam broadcast. Usage: /setjam <1-24>"""
+    global BROADCAST_INTERVAL_HR, VIDEOS_PER_BROADCAST
     if update.effective_user.id != ADMIN_ID:
         return
     if not context.args or not context.args[0].isdigit():
@@ -442,7 +443,6 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     hours = int(context.args[0])
     hours = max(1, min(hours, 24))
-    global BROADCAST_INTERVAL_HR
     BROADCAST_INTERVAL_HR = hours
 
     # Update scheduler
