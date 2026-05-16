@@ -18,6 +18,8 @@ CHANNEL_ID            = os.getenv("CHANNEL_ID", "@nama_channel_kamu")
 CHANNEL_LINK          = os.getenv("CHANNEL_LINK", "https://t.me/nama_channel_kamu")
 BOT_USERNAME          = os.getenv("BOT_USERNAME", "nama_bot_kamu")
 ADMIN_ID              = int(os.getenv("ADMIN_ID", "0"))
+WJR_GROUP_ID          = int(os.getenv("WJR_GROUP_ID", "-1003726607103"))
+WJR_GROUP_LINK        = "https://t.me/+5uw96pDwyzphMjhh"
 VIDEOS_PER_BROADCAST  = int(os.getenv("VIDEOS_PER_BROADCAST", "1"))   # jumlah batch per broadcast
 BROADCAST_INTERVAL_HR = int(os.getenv("BROADCAST_INTERVAL_HR", "3"))  # interval jam
 
@@ -25,6 +27,39 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 video_manager = VideoManager()
+
+
+# ══════════════════════════════════════════════
+#  HELPER: cek membership WJR
+# ══════════════════════════════════════════════
+
+async def is_member_wjr(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Cek apakah user sudah join grup WJR."""
+    try:
+        member = await context.bot.get_chat_member(chat_id=WJR_GROUP_ID, user_id=user_id)
+        return member.status in ["member", "administrator", "creator"]
+    except Exception as e:
+        logger.warning(f"Gagal cek membership WJR untuk user {user_id}: {e}")
+        return False
+
+
+async def send_join_required(chat_id: int, context: ContextTypes.DEFAULT_TYPE):
+    """Kirim pesan wajib join WJR."""
+    keyboard = [[InlineKeyboardButton("🔓 Join Grup WJR Sekarang", url=WJR_GROUP_LINK)]]
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=(
+            "🔒 <b>Akses Terbatas!</b>\n\n"
+            "Untuk menonton video, kamu harus join grup dulu:\n"
+            "👥 <b>Warkop Jam Rawan (WJR)</b>\n\n"
+            "1️⃣ Klik tombol di bawah\n"
+            "2️⃣ Join grupnya\n"
+            "3️⃣ Kembali ke sini & coba lagi\n\n"
+            "Gratis dan langsung bisa akses semua konten! 🎬"
+        ),
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 
 # ══════════════════════════════════════════════
@@ -46,7 +81,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def list_videos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    is_admin = update.effective_user.id == ADMIN_ID
+    user     = update.effective_user
+    is_admin = user.id == ADMIN_ID
+
+    # Cek membership WJR untuk non-admin
+    if not is_admin:
+        if not await is_member_wjr(user.id, context):
+            await send_join_required(update.effective_chat.id, context)
+            return
+
     all_batches = video_manager.get_all_batches()
     batches = all_batches if is_admin else [b for b in all_batches if b.get("broadcasted")]
 
@@ -277,15 +320,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     if query.data.startswith("batch_"):
         batch_id = int(query.data.replace("batch_", ""))
-        await deliver_batch(query.message.chat_id, batch_id, context)
+        await deliver_batch(query.message.chat_id, batch_id, context, user_id=query.from_user.id)
 
 
 # ══════════════════════════════════════════════
 #  HELPER: kirim semua video dalam batch
 # ══════════════════════════════════════════════
 
-async def deliver_batch(chat_id: int, batch_id: int, context: ContextTypes.DEFAULT_TYPE):
+async def deliver_batch(chat_id: int, batch_id: int, context: ContextTypes.DEFAULT_TYPE, user_id: int = None):
     """Kirim semua video dalam batch ke chat user."""
+
+    # Cek membership WJR (skip untuk admin)
+    uid = user_id or chat_id
+    if uid != ADMIN_ID:
+        if not await is_member_wjr(uid, context):
+            await send_join_required(chat_id, context)
+            return
+
     batch  = video_manager.get_batch_by_id(batch_id)
     videos = video_manager.get_batch_videos(batch_id)
 
@@ -326,28 +377,13 @@ async def scheduled_broadcast(app: Application):
         logger.warning("Tidak ada batch untuk di-broadcast.")
         return
 
-    now_str  = datetime.now(WIB).strftime("%d/%m/%Y %H:%M")
-    keyboard = [
-        [InlineKeyboardButton("▶️ Tonton Sekarang", url=f"https://t.me/{BOT_USERNAME}?start=latest")],
-        [
-            InlineKeyboardButton("🇮🇩 INDO",    url="https://t.me/+CLXra5Lm4rc1Y2Zh"),
-            InlineKeyboardButton("🇯🇵 JAPAN",   url="https://t.me/+tSGlOfH1V8E0Nzlh"),
-        ],
-        [
-            InlineKeyboardButton("🎲 RANDOM",   url="https://t.me/+7cPNNKRQpnEwMWUx"),
-            InlineKeyboardButton("🎭 COSPLAY",  url="https://t.me/+TtwwNigcAAEyM2Vh"),
-        ],
-        [InlineKeyboardButton("Channel Warkop Lainnya 🔥", url=CHANNEL_LINK)],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    now_str = datetime.now(WIB).strftime("%d/%m/%Y %H:%M")
 
     for batch in batches:
         try:
-            videos     = video_manager.get_batch_videos(batch["id"])
-            bot_link   = f"https://t.me/{BOT_USERNAME}?start=batch_{batch['id']}"
-            judul_list = "\n".join([f"• {v['title'].rsplit(' #',1)[0]}" for i,v in enumerate(videos)])
+            videos   = video_manager.get_batch_videos(batch["id"])
+            bot_link = f"https://t.me/{BOT_USERNAME}?start=batch_{batch['id']}"
 
-            # Update tombol dengan link batch spesifik
             kb = [
                 [InlineKeyboardButton("▶️ Tonton Sekarang", url=bot_link)],
                 [
@@ -400,7 +436,12 @@ async def deep_link_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         arg = context.args[0]
         if arg.startswith("batch_"):
             batch_id = int(arg.replace("batch_", ""))
-            await deliver_batch(update.effective_chat.id, batch_id, context)
+            await deliver_batch(
+                update.effective_chat.id,
+                batch_id,
+                context,
+                user_id=update.effective_user.id
+            )
         else:
             await start(update, context)
     else:
@@ -421,14 +462,14 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
 
     # Admin
-    app.add_handler(CommandHandler("batch",      create_batch))
-    app.add_handler(CommandHandler("thumbbatch", set_batch_thumbnail))
+    app.add_handler(CommandHandler("batch",        create_batch))
+    app.add_handler(CommandHandler("thumbbatch",   set_batch_thumbnail))
     app.add_handler(CommandHandler("clearpending", clear_pending))
-    app.add_handler(CommandHandler("broadcast",  broadcast_now))
-    app.add_handler(CommandHandler("listall",    list_admin))
-    app.add_handler(CommandHandler("delete",     delete_batch_cmd))
-    app.add_handler(CommandHandler("setvideo",   set_videos_count))
-    app.add_handler(CommandHandler("setjam",     set_interval))
+    app.add_handler(CommandHandler("broadcast",    broadcast_now))
+    app.add_handler(CommandHandler("listall",      list_admin))
+    app.add_handler(CommandHandler("delete",       delete_batch_cmd))
+    app.add_handler(CommandHandler("setvideo",     set_videos_count))
+    app.add_handler(CommandHandler("setjam",       set_interval))
 
     # Handler video & foto dari admin
     app.add_handler(MessageHandler(filters.VIDEO & filters.User(ADMIN_ID), handle_video_upload))
