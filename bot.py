@@ -16,12 +16,14 @@ from video_manager import VideoManager
 BOT_TOKEN             = os.getenv("BOT_TOKEN", "ISI_BOT_TOKEN_DI_SINI")
 CHANNEL_ID            = os.getenv("CHANNEL_ID", "@nama_channel_kamu")
 CHANNEL_LINK          = os.getenv("CHANNEL_LINK", "https://t.me/nama_channel_kamu")
+CHANNEL_ID_2          = os.getenv("CHANNEL_ID_2", "@wjr_japan")          # WJR Japan
+CHANNEL_LINK_2        = "https://t.me/+tSGlOfH1V8E0Nzlh"                # WJR Japan link
 BOT_USERNAME          = os.getenv("BOT_USERNAME", "nama_bot_kamu")
 ADMIN_ID              = int(os.getenv("ADMIN_ID", "0"))
 WJR_GROUP_ID          = int(os.getenv("WJR_GROUP_ID", "-1003726607103"))
 WJR_GROUP_LINK        = "https://t.me/+5uw96pDwyzphMjhh"
-VIDEOS_PER_BROADCAST  = int(os.getenv("VIDEOS_PER_BROADCAST", "1"))   # jumlah batch per broadcast
-BROADCAST_INTERVAL_HR = int(os.getenv("BROADCAST_INTERVAL_HR", "3"))  # interval jam
+VIDEOS_PER_BROADCAST  = int(os.getenv("VIDEOS_PER_BROADCAST", "1"))
+BROADCAST_INTERVAL_HR = int(os.getenv("BROADCAST_INTERVAL_HR", "3"))
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -371,6 +373,47 @@ async def deliver_batch(chat_id: int, batch_id: int, context: ContextTypes.DEFAU
 #  SCHEDULED BROADCAST
 # ══════════════════════════════════════════════
 
+async def broadcast_to_channel(app: Application, channel_id: str, channel_link: str, batch: dict, videos: list, now_str: str):
+    """Kirim broadcast ke satu channel."""
+    bot_link = f"https://t.me/{BOT_USERNAME}?start=batch_{batch['id']}"
+
+    kb = [
+        [InlineKeyboardButton("▶️ Tonton Sekarang", url=bot_link)],
+        [
+            InlineKeyboardButton("🇮🇩 INDO",   url="https://t.me/+CLXra5Lm4rc1Y2Zh"),
+            InlineKeyboardButton("🇯🇵 JAPAN",  url="https://t.me/+tSGlOfH1V8E0Nzlh"),
+        ],
+        [
+            InlineKeyboardButton("🎲 RANDOM",  url="https://t.me/+7cPNNKRQpnEwMWUx"),
+            InlineKeyboardButton("🎭 COSPLAY", url="https://t.me/+TtwwNigcAAEyM2Vh"),
+        ],
+        [InlineKeyboardButton("Channel Warkop Lainnya 🔥", url=channel_link)],
+    ]
+    rm = InlineKeyboardMarkup(kb)
+
+    caption = (
+        f"🎬 <b>{batch['title']}</b>\n\n"
+        f"🕐 {now_str} WIB\n"
+        f"▶️ Klik tombol untuk tonton langsung!"
+    )
+
+    if batch.get("thumbnail_id"):
+        await app.bot.send_photo(
+            chat_id=channel_id,
+            photo=batch["thumbnail_id"],
+            caption=caption,
+            parse_mode="HTML",
+            reply_markup=rm
+        )
+    else:
+        await app.bot.send_message(
+            chat_id=channel_id,
+            text=caption,
+            parse_mode="HTML",
+            reply_markup=rm
+        )
+
+
 async def scheduled_broadcast(app: Application):
     batches = video_manager.get_next_scheduled_batches(VIDEOS_PER_BROADCAST)
     if not batches:
@@ -381,47 +424,18 @@ async def scheduled_broadcast(app: Application):
 
     for batch in batches:
         try:
-            videos   = video_manager.get_batch_videos(batch["id"])
-            bot_link = f"https://t.me/{BOT_USERNAME}?start=batch_{batch['id']}"
+            videos = video_manager.get_batch_videos(batch["id"])
 
-            kb = [
-                [InlineKeyboardButton("▶️ Tonton Sekarang", url=bot_link)],
-                [
-                    InlineKeyboardButton("🇮🇩 INDO",   url="https://t.me/+CLXra5Lm4rc1Y2Zh"),
-                    InlineKeyboardButton("🇯🇵 JAPAN",  url="https://t.me/+tSGlOfH1V8E0Nzlh"),
-                ],
-                [
-                    InlineKeyboardButton("🎲 RANDOM",  url="https://t.me/+7cPNNKRQpnEwMWUx"),
-                    InlineKeyboardButton("🎭 COSPLAY", url="https://t.me/+TtwwNigcAAEyM2Vh"),
-                ],
-                [InlineKeyboardButton("Channel Warkop Lainnya 🔥", url=CHANNEL_LINK)],
-            ]
-            rm = InlineKeyboardMarkup(kb)
+            # Broadcast ke channel utama
+            await broadcast_to_channel(app, CHANNEL_ID, CHANNEL_LINK, batch, videos, now_str)
+            logger.info(f"✅ Broadcast ke channel utama: {batch['title']}")
 
-            caption = (
-                f"🎬 <b>{batch['title']}</b>\n\n"
-                f"🕐 {now_str} WIB\n"
-                f"▶️ Klik tombol untuk tonton langsung!"
-            )
-
-            if batch.get("thumbnail_id"):
-                await app.bot.send_photo(
-                    chat_id=CHANNEL_ID,
-                    photo=batch["thumbnail_id"],
-                    caption=caption,
-                    parse_mode="HTML",
-                    reply_markup=rm
-                )
-            else:
-                await app.bot.send_message(
-                    chat_id=CHANNEL_ID,
-                    text=caption,
-                    parse_mode="HTML",
-                    reply_markup=rm
-                )
+            # Broadcast ke WJR Japan
+            await broadcast_to_channel(app, CHANNEL_ID_2, CHANNEL_LINK_2, batch, videos, now_str)
+            logger.info(f"✅ Broadcast ke WJR Japan: {batch['title']}")
 
             video_manager.mark_batch_broadcasted(batch["id"])
-            logger.info(f"✅ Broadcast batch: {batch['title']} ({len(videos)} video)")
+            logger.info(f"✅ Selesai broadcast batch: {batch['title']} ({len(videos)} video)")
 
         except Exception as e:
             logger.error(f"❌ Gagal broadcast batch {batch['id']}: {e}")
