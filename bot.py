@@ -333,8 +333,10 @@ async def scheduled_broadcast(app: Application):
         return
 
     now_str = datetime.now(WIB).strftime("%d/%m/%Y %H:%M")
+    # Buat link dengan semua ID video dipisah underscore
+    video_ids = "_".join([str(v["id"]) for v in videos])
     keyboard = [
-        [InlineKeyboardButton("▶️ Tonton Sekarang", url=f"https://t.me/{BOT_USERNAME}?start=latest")],
+        [InlineKeyboardButton("▶️ Tonton Sekarang", url=f"https://t.me/{BOT_USERNAME}?start=batch_{video_ids}")],
         [
             InlineKeyboardButton("🇮🇩 INDO", url="https://t.me/+CLXra5Lm4rc1Y2Zh"),
             InlineKeyboardButton("🇯🇵 JAPAN", url="https://t.me/+tSGlOfH1V8E0Nzlh"),
@@ -468,12 +470,34 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def deep_link_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.args and context.args[0].startswith("video_"):
-        vid_id = int(context.args[0].replace("video_", ""))
-        video  = video_manager.get_video_by_id(vid_id)
-        if video:
-            await update.message.reply_text(f"🎬 Memutar video: <b>{video['title']}</b>", parse_mode="HTML")
-            await deliver_video(update.effective_chat.id, video, context)
+    if context.args:
+        arg = context.args[0]
+
+        if arg.startswith("batch_"):
+            # Kirim semua video dalam batch sekaligus
+            ids_str = arg.replace("batch_", "")
+            vid_ids = [int(x) for x in ids_str.split("_") if x.isdigit()]
+            await update.message.reply_text(
+                f"🎬 <b>{len(vid_ids)} video tersedia untukmu!</b>\nMemuat...",
+                parse_mode="HTML"
+            )
+            for vid_id in vid_ids:
+                video = video_manager.get_video_by_id(vid_id)
+                if video:
+                    await deliver_video(update.effective_chat.id, video, context)
+
+        elif arg.startswith("video_"):
+            vid_id = int(arg.replace("video_", ""))
+            video  = video_manager.get_video_by_id(vid_id)
+            if video:
+                await update.message.reply_text(f"🎬 Memutar video: <b>{video['title']}</b>", parse_mode="HTML")
+                await deliver_video(update.effective_chat.id, video, context)
+            else:
+                await start(update, context)
+
+        elif arg == "latest":
+            await send_latest_video(update, context)
+
         else:
             await start(update, context)
     else:
