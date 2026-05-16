@@ -330,7 +330,18 @@ async def scheduled_broadcast(app: Application):
         return
 
     now_str      = datetime.now(WIB).strftime("%d/%m/%Y %H:%M")
-    keyboard     = [[InlineKeyboardButton("▶️ Tonton Sekarang", url=f"https://t.me/{BOT_USERNAME}?start=latest")]]
+    keyboard = [
+        [InlineKeyboardButton("▶️ Tonton Sekarang", url=f"https://t.me/{BOT_USERNAME}?start=latest")],
+        [
+            InlineKeyboardButton("🇮🇩 INDO", url="https://t.me/+CLXra5Lm4rc1Y2Zh"),
+            InlineKeyboardButton("🇯🇵 JAPAN", url="https://t.me/+tSGlOfH1V8E0Nzlh"),
+        ],
+        [
+            InlineKeyboardButton("🎲 RANDOM", url="https://t.me/+7cPNNKRQpnEwMWUx"),
+            InlineKeyboardButton("🎭 COSPLAY", url="https://t.me/+TtwwNigcAAEyM2Vh"),
+        ],
+        [InlineKeyboardButton("Channel Warkop Lainnya 🔥", url=CHANNEL_LINK)],
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     # Pisah video yang punya thumbnail dan yang tidak
