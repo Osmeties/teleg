@@ -75,6 +75,40 @@ class VideoManager:
                     row = cur.fetchone()
         return dict(row) if row else None
 
+    def get_next_scheduled_videos(self, count: int = 3) -> list:
+        """Ambil beberapa video berikutnya yang belum dibroadcast (max 10)."""
+        count = max(1, min(count, 10))  # batasi 1-10
+        with self._connect() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM videos WHERE broadcasted = FALSE ORDER BY id ASC LIMIT %s",
+                    (count,)
+                )
+                rows = cur.fetchall()
+        return [dict(r) for r in rows]
+
+    def set_videos_per_broadcast(self, count: int):
+        """Simpan setting jumlah video per broadcast ke DB."""
+        count = max(1, min(count, 10))
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+                    INSERT INTO settings (key, value) VALUES ('videos_per_broadcast', %s)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """, (str(count),))
+            conn.commit()
+
+    def get_videos_per_broadcast(self) -> int:
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT value FROM settings WHERE key = 'videos_per_broadcast'")
+                    row = cur.fetchone()
+            return int(row[0]) if row else 3
+        except:
+            return 3
+
     def get_video_by_id(self, video_id: int):
         with self._connect() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
