@@ -322,14 +322,14 @@ async def deliver_video(chat_id: int, video: dict, context: ContextTypes.DEFAULT
 
 async def scheduled_broadcast(app: Application):
     """Broadcast beberapa video sekaligus sebagai media group (album)."""
-    from telegram import InputMediaPhoto
+    from telegram import InputMediaVideo, InputMediaPhoto
 
     videos = video_manager.get_next_scheduled_videos(VIDEOS_PER_BROADCAST)
     if not videos:
         logger.warning("Tidak ada video untuk di-broadcast.")
         return
 
-    now_str      = datetime.now(WIB).strftime("%d/%m/%Y %H:%M")
+    now_str = datetime.now(WIB).strftime("%d/%m/%Y %H:%M")
     keyboard = [
         [InlineKeyboardButton("▶️ Tonton Sekarang", url=f"https://t.me/{BOT_USERNAME}?start=latest")],
         [
@@ -344,49 +344,66 @@ async def scheduled_broadcast(app: Application):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Pisah video yang punya thumbnail dan yang tidak
-    with_thumb    = [v for v in videos if v.get("thumbnail_id")]
-    without_thumb = [v for v in videos if not v.get("thumbnail_id")]
-
     try:
-        if with_thumb:
-            # Buat media group dari thumbnail
-            media_group = []
-            for i, v in enumerate(with_thumb):
-                bot_link = f"https://t.me/{BOT_USERNAME}?start=video_{v['id']}"
-                cap = f"🎬 <b>{v['title']}</b>\n▶️ <a href=\"{bot_link}\">Tonton Sekarang</a>"
-                media_group.append(
-                    InputMediaPhoto(
-                        media=v["thumbnail_id"],
-                        caption=cap if i == 0 else f"🎬 <b>{v['title']}</b>\n▶️ <a href=\"{bot_link}\">Tonton</a>",
-                        parse_mode="HTML"
-                    )
+        if len(videos) == 1:
+            # Hanya 1 video — kirim langsung dengan tombol
+            v = videos[0]
+            bot_link = f"https://t.me/{BOT_USERNAME}?start=video_{v['id']}"
+            caption = (
+                f"🎬 <b>Video Terbaru Tersedia!</b>\n\n"
+                f"📌 <b>{v['title']}</b>\n"
+                f"🕐 {now_str} WIB\n\n"
+                f"▶️ Klik tombol untuk tonton langsung!"
+            )
+            if v.get("thumbnail_id"):
+                await app.bot.send_photo(
+                    chat_id=CHANNEL_ID,
+                    photo=v["thumbnail_id"],
+                    caption=caption,
+                    parse_mode="HTML",
+                    reply_markup=reply_markup
                 )
+            else:
+                await app.bot.send_message(
+                    chat_id=CHANNEL_ID,
+                    text=caption,
+                    parse_mode="HTML",
+                    reply_markup=reply_markup
+                )
+        else:
+            # Banyak video — kirim sebagai media group
+            # Prioritas: pakai thumbnail jika ada, fallback ke video langsung
+            media_group = []
+            for i, v in enumerate(videos):
+                bot_link = f"https://t.me/{BOT_USERNAME}?start=video_{v['id']}"
+                cap = f"🎬 <b>{v['title']}</b>\n▶️ <a href=\"{bot_link}\">Tonton</a>" if i > 0 else (
+                    f"🎬 <b>Video Terbaru Tersedia!</b>\n"
+                    f"📌 {v['title']}\n"
+                    f"🕐 {now_str} WIB\n"
+                    f"▶️ <a href=\"{bot_link}\">Tonton</a>"
+                )
+                if v.get("thumbnail_id"):
+                    media_group.append(InputMediaPhoto(
+                        media=v["thumbnail_id"],
+                        caption=cap,
+                        parse_mode="HTML"
+                    ))
+                else:
+                    media_group.append(InputMediaVideo(
+                        media=v["file_id"] or v["url"],
+                        caption=cap,
+                        parse_mode="HTML",
+                        supports_streaming=True
+                    ))
 
-            # Kirim album thumbnail
+            # Kirim album
             await app.bot.send_media_group(
                 chat_id=CHANNEL_ID,
                 media=media_group
             )
 
-            # Kirim 1 pesan teks dengan tombol setelah album
-            judul_list = "\n".join([f"• {v['title']}" for v in with_thumb])
-            caption = (
-                f"🎬 <b>Video Terbaru Tersedia!</b>\n\n"
-                f"{judul_list}\n\n"
-                f"🕐 {now_str} WIB\n"
-                f"▶️ Klik tombol untuk tonton langsung!"
-            )
-            await app.bot.send_message(
-                chat_id=CHANNEL_ID,
-                text=caption,
-                parse_mode="HTML",
-                reply_markup=reply_markup
-            )
-
-        # Video tanpa thumbnail — kirim teks biasa
-        if without_thumb:
-            judul_list = "\n".join([f"• {v['title']}" for v in without_thumb])
+            # Kirim pesan tombol terpisah setelah album
+            judul_list = "\n".join([f"• {v['title']}" for v in videos])
             caption = (
                 f"🎬 <b>Video Terbaru Tersedia!</b>\n\n"
                 f"{judul_list}\n\n"
